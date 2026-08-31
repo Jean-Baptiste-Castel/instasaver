@@ -1,0 +1,11 @@
+build/
+dist/
+*.dmg
+*.exe
+.build-venv/
+__pycache__/
+*.pyc
+.DS_Store
+check_output*.txt
+build_log.txt
+app_log.txt

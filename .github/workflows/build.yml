@@ -1,0 +1,95 @@
+name: Build
+
+# Run it by hand from the Actions tab, or push a tag like v1.1 to get a release
+# with all three files attached.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            label: AppleSilicon
+          - runner: macos-15-intel
+            label: Intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Build the app
+        run: pyinstaller --noconfirm --clean InstaSaver.spec
+      - name: Sign it ad hoc
+        run: codesign --force --deep --sign - dist/InstaSaver.app
+      - name: Make the disk image
+        run: |
+          VERSION=$(cat VERSION)
+          NAME="InstaSaver-$VERSION-macOS-${{ matrix.label }}"
+          mkdir -p stage
+          cp -R dist/InstaSaver.app stage/
+          ln -s /Applications stage/Applications
+          hdiutil create -srcfolder stage -volname InstaSaver \
+                 -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$NAME.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InstaSaver-macOS-${{ matrix.label }}
+          path: "*.dmg"
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pywin32
+      - name: Build the app
+        run: pyinstaller --noconfirm --clean InstaSaver-windows.spec
+      - name: Name it
+        shell: bash
+        run: |
+          VERSION=$(cat VERSION)
+          mv dist/InstaSaver.exe "InstaSaver-$VERSION-Windows.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InstaSaver-Windows
+          path: "*.exe"
+          if-no-files-found: error
+
+  release:
+    name: Attach everything to the release
+    needs: [macos, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+             --title "InstaSaver $GITHUB_REF_NAME" \
+             --generate-notes \
+             artifacts/*/*
