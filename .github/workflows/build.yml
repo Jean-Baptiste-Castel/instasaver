@@ -89,7 +89,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-             --title "InstaSaver $GITHUB_REF_NAME" \
-             --generate-notes \
-             artifacts/*/*
+          # works whether the tag came from a push or from a release drafted
+          # in the browser, and replaces the files if the build is re-run
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+               --title "InstaSaver $GITHUB_REF_NAME" \
+               --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" artifacts/*/* --clobber
